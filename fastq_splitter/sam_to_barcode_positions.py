@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(description=f"Parse a sam file that contains ba
 parser.add_argument('sam_file')
 parser.add_argument('ref_fasta')
 
-parser.add_argument('-qt', metavar='--quality-threshold', help='Threshold for counting a nucleotide (used for coverage). Default=15', default=15)
+parser.add_argument('-qt', metavar='--quality-threshold', help='Threshold for counting a nucleotide (used for coverage). Default=0, cause currently only counting total coverage', default=0)
 parser.add_argument('-o', metavar='--output', help='Output name for the csv', default='')
 # parser.add_argument('-bf', metavar='--barcode_file', help='Fasta file containing one or more barcodes to split on.')
 # parser.add_argument('-r', default=False, action='store_true', help='Removes barcode from the read.')
@@ -20,12 +20,9 @@ args = parser.parse_args()
 
 sam_file_name = args.sam_file.split('/')[-1].split('.')[0]
 if args.o:
-    if args.o.endswith('.csv'):
-        csv_name = args.o
-    else:
-        csv_name = f"{args.o}.csv"
+    args.o = args.o.strip('.csv')
 else:
-    csv_name = f"{sam_file_name}.csv"
+    csv_name = sam_file_name
 
 try:
     import pysam
@@ -79,4 +76,4 @@ for trans_id, sequence in ref_sequence.items():
     for barcode, values in barcodes.items():
         csv_dict[barcode] = list(values)
     df = pd.DataFrame(csv_dict)
-    df.to_csv(f"{sam_file_name}.csv")
+    df.to_csv(f"{csv_name}_{trans_id}.csv")

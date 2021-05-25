@@ -47,12 +47,13 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
         pos_list = [i.start() for i in re.finditer(barcode, str(record.seq))]
         if pos_list:
             barcode_hits.append(bar_id)
-            record.id = f"{bar_id}:{','.join(map(str, pos_list))}_{record.id}"
             if not args.nr:
                 removed = 0
-                for pos in pos_list:
+                for idx, pos in enumerate(pos_list):
                     record = record[:pos-removed] + record[(pos+len(barcode))-removed:]
+                    pos_list[idx] = pos_list[idx] - removed
                     removed += len(barcode)
+            record.id = f"{bar_id}:{','.join(map(str, pos_list))}_{record.id}"
     append_fastq(record, open_files['all'])
     if len(barcode_hits) == 0:
         append_fastq(record, open_files['nobar'])
