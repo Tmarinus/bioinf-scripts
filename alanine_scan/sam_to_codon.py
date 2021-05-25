@@ -53,7 +53,7 @@ f_str = str(list(fasta_dict.values())[0].seq)
 
 samfile = pysam.AlignmentFile(sam_file, "rb")
 # pysam.set_verbosity(save)
-
+cnt = 0
 for read in samfile.fetch():
     if len(read.get_blocks()) == 1 and not read.flag:
         # TODO fix clippings
@@ -65,15 +65,26 @@ for read in samfile.fetch():
             exit()
         read_codon_start = (read.reference_start % 3) + read.reference_start
         # this is to add
-        AA_pos = int((read_codon_start-AA_start) / 3)
+        AA_pos = max(int((read_codon_start-AA_start) / 3), 0)
         t_str = read.get_forward_sequence()[read.reference_start % 3:]
         read_str = Seq(t_str[:len(t_str)-(len(t_str) % 3)])
         for mut_pos, (AA_read, AA_ref) in enumerate(zip(read_str.translate(), amino_str[AA_pos:])):
+            print(mut_pos)
             mut_pos += AA_pos
             if AA_read != AA_ref:
-                print(mut_pos, AA_read, AA_ref)
-        break
-        # if codon_start_offset: codon_start_offset = 3-codon_start_offset
+                print(read_str.translate())
+                print(amino_str[AA_pos:])
+                print(f_str[read.reference_start:read.reference_end])
+                aa_tmp1 = str(Seq(f_str[read.reference_start:read.reference_end]).translate())
+                print(read.get_forward_sequence())
+                aa_tmp2 = str(Seq(read.get_forward_sequence()).translate())
+                print(aa_tmp1 == aa_tmp2)
+                print(f_str[read.reference_start:read.reference_end] == read.get_forward_sequence())
+                # print(cnt, mut_pos, AA_read, AA_ref, read.flag, read.cigarstring, read.get_forward_sequence())
+                # exit()
+                print("")
+    # if codon_start_offset: codon_start_offset = 3-codon_start_offset
+    cnt += 1
 exit()
 a_codons = ['GCT', 'GCC', 'GCA', 'GCG']
 orf_offset = 0
