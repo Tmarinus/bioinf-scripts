@@ -61,22 +61,13 @@ for read in samfile.fetch():
         forward_str = read.get_forward_sequence()
         start, end = read.reference_start, read.reference_end
         if end-start != len(forward_str):
-            print('errro')
+            print('error, end and start are mixed?')
+            exit()
         read_codon_start = (read.reference_start % 3) + read.reference_start
-        print(f_str[read_codon_start:read_codon_start+3])
-        print(codon_table[f_str[read_codon_start:read_codon_start+3]])
         # this is to add
-        print(read_codon_start)
-        print(read.reference_start)
-        print(read)
         AA_pos = int((read_codon_start-AA_start) / 3)
-        print(AA_pos)
-        print(amino_str[AA_pos-1:AA_pos+2])
-        print(f_str[read.reference_start:read.reference_end])
-        print(read.get_forward_sequence())
         t_str = read.get_forward_sequence()[read.reference_start % 3:]
         read_str = Seq(t_str[:len(t_str)-(len(t_str) % 3)])
-        print(read_str.translate())
         for mut_pos, (AA_read, AA_ref) in enumerate(zip(read_str.translate(), amino_str[AA_pos:])):
             mut_pos += AA_pos
             if AA_read != AA_ref:
