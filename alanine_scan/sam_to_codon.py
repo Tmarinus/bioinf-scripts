@@ -15,34 +15,39 @@ except ImportError:
     print(f'Script requires pysam module to be installed run\npip3 install pysam --user\npip3 install BioPython --user\n'
           f'pip3 install alive_progress --user\npip3 install matplotlib --user\npip3 install pandas --user')
     exit()
-debug = True
+debug = False
 
 if len(sys.argv) != 4 and not debug:
-    print(f'To run give paths to vcf file, sam/bam and output\n'
-          f'eg: sam_to_codon test_files/barcode3_indels.vcf test_files/template_gal_k2.fasta output.fasta')
+    # print(f'To run give paths to sam/bam, nucleotide reference, aa reference,  and output\n'
+    #       f'eg: sam_to_codon test_files/template_gal_k2.fasta test_files/template_gal_k2_AA.fasta output.fasta')
+    print(f'TMP can only do k2 killer toxin. just provide sam/bam fasta_ref and output path')
     print(f'Make sure the bam/sam files have an index\nsamtools index file.bam')
     exit()
 
 
 # Codon table:
-bases = "TCAG".upper()
-codons = [a + b + c for a in bases for b in bases for c in bases]
-amino_acids = 'FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG'
-codon_table = dict(zip(codons, amino_acids))
+# bases = "TCAG".upper()
+# codons = [a + b + c for a in bases for b in bases for c in bases]
+# amino_acids = 'FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG'
+# codon_table = dict(zip(codons, amino_acids))
 
 
 if debug:
     fasta_file = '/home/dwarrel/projects/data_testing/k2_toxin/template_gal_k2.fasta'
     sam_file = '/home/dwarrel/projects/data_testing/k2_toxin/bowtie_barcode3.sam'
     AA_start = 2530  # in fasta 2531
+    AA_end = 3616
     #TODO hack
     amino_str = 'MKETTTSLMQDELTLGEPATQARMCVRLLRFFIGLTITAFIIAACIIKSATGGSGYSKAVAVRGEADTPSTIVGQLVERGGFQAWAVGAGIYLFAKIAYDTSKVTAAVCNPEALIAITSYVAYAPTLCAGAYVIGAMSGAMSAGLALYAGYKGWQWGGPGGMAEREDVASFYSPLLNNTLYVGGDHTADYDSELATILGSVYNDVVHLGVYYDNSTGIVKRDSRPSMISWTVLHDNMMITSYHRPDQLGAAATAYKAYTTNTTRVGKRQDGEWVSYSVYGENVDYERYPVAHLQEEADACYESLGNMITSQVQPCTQRECYAMDQKVCAAVGFSSDAGVNSAMVGEAYFYAYGGVDGECDSG'
     ins_site = 'CCTGCAGGG'  # sbf1
+    output = 'test'
 else:
+    AA_start = 2530  # in fasta 2531
+    AA_end = 3616
+    amino_str = 'MKETTTSLMQDELTLGEPATQARMCVRLLRFFIGLTITAFIIAACIIKSATGGSGYSKAVAVRGEADTPSTIVGQLVERGGFQAWAVGAGIYLFAKIAYDTSKVTAAVCNPEALIAITSYVAYAPTLCAGAYVIGAMSGAMSAGLALYAGYKGWQWGGPGGMAEREDVASFYSPLLNNTLYVGGDHTADYDSELATILGSVYNDVVHLGVYYDNSTGIVKRDSRPSMISWTVLHDNMMITSYHRPDQLGAAATAYKAYTTNTTRVGKRQDGEWVSYSVYGENVDYERYPVAHLQEEADACYESLGNMITSQVQPCTQRECYAMDQKVCAAVGFSSDAGVNSAMVGEAYFYAYGGVDGECDSG'
     sam_file = sys.argv[1]
     fasta_file = sys.argv[2]
     output = sys.argv[3]
-
 # import seaborn as sns
 fasta_dict = {}
 # with open('/home/tycho/tmp_r/test_files/template_gal_k2.fasta', "r") as file:
@@ -52,99 +57,73 @@ with open(fasta_file, "r") as file:
 f_str = str(list(fasta_dict.values())[0].seq)
 
 samfile = pysam.AlignmentFile(sam_file, "rb")
-# pysam.set_verbosity(save)
-cnt = 0
-for read in samfile.fetch():
+read_passed_cnt, read_mut_cnt, alanine_mut_cnt, alt_mut_cnt = 0, [0, 0, 0, 0, 0], 0, 0
+read_count = np.array([0]*len(f_str))
+aa_alanine_muts = np.array([0]*len(amino_str))
+aa_alt_muts = np.array([0]*len(amino_str))
+idx = 0
+for idx, read in enumerate(samfile.fetch()):
     if len(read.get_blocks()) == 1 and not read.flag:
         # TODO fix clippings
         if 'H' in read.cigarstring or 'S' in read.cigarstring: continue
+        read_passed_cnt += 1
+        # if idx != 11: continue
         forward_str = read.get_forward_sequence()
         start, end = read.reference_start, read.reference_end
+        read_count[start:end] += 1
+        if start < AA_start:
+            forward_str = forward_str[AA_start-start:]
+            start = AA_start
+        if end > AA_end:
+            forward_str = forward_str[:AA_end-end]
+            end = AA_end
         if end-start != len(forward_str):
             print('error, end and start are mixed?')
             exit()
-        read_codon_start = (read.reference_start % 3) + read.reference_start
-        # this is to add
-        AA_pos = max(int((read_codon_start-AA_start) / 3), 0)
-        t_str = read.get_forward_sequence()[read.reference_start % 3:]
-        read_str = Seq(t_str[:len(t_str)-(len(t_str) % 3)])
-        for mut_pos, (AA_read, AA_ref) in enumerate(zip(read_str.translate(), amino_str[AA_pos:])):
-            print(mut_pos)
-            mut_pos += AA_pos
-            if AA_read != AA_ref:
-                print(read_str.translate())
-                print(amino_str[AA_pos:])
-                print(f_str[read.reference_start:read.reference_end])
-                aa_tmp1 = str(Seq(f_str[read.reference_start:read.reference_end]).translate())
-                print(read.get_forward_sequence())
-                aa_tmp2 = str(Seq(read.get_forward_sequence()).translate())
-                print(aa_tmp1 == aa_tmp2)
-                print(f_str[read.reference_start:read.reference_end] == read.get_forward_sequence())
-                # print(cnt, mut_pos, AA_read, AA_ref, read.flag, read.cigarstring, read.get_forward_sequence())
-                # exit()
-                print("")
-    # if codon_start_offset: codon_start_offset = 3-codon_start_offset
-    cnt += 1
-exit()
-a_codons = ['GCT', 'GCC', 'GCA', 'GCG']
-orf_offset = 0
-read_count = np.array([0]*len(f_str))
-a_count = np.array([0]*len(f_str))
-a_count1 = np.array([0]*len(f_str))
-a_count2 = np.array([0]*len(f_str))
-cnt = 0
-for read in samfile.fetch():
-    if len(read.get_blocks()) == 1 and not read.flag:
-        # TODO fix clippings
-        if 'H' in read.cigarstring or 'S' in read.cigarstring: continue
-        cnt+=1
-        forward_str = read.get_forward_sequence()
-        start, end = read.reference_start, read.reference_end
-        if end-start != len(forward_str):
-            print('errro')
-        read_count[start:end] += 1
-        codon_start_offset = (read.reference_start-2527) % 3
-        if codon_start_offset: codon_start_offset = 3-codon_start_offset
-        #TODO brainfart
-        # print(read.reference_start, read.query_length, read.reference_end)
-        start_offset, end_offset = 3-read.reference_start % 3, read.reference_end % 3
-        for codon in range(codon_start_offset, end-start, 3):
-            if len(forward_str[codon:codon+3]) < 3:
-                break
-            aa = Seq(forward_str[codon:codon+3])
-            if str(aa) == 'GCT' and Seq(f_str[start+codon:start+codon+3]).translate() != 'A':
-                a_count[start+codon:start+codon+3] += 1
-            if str(aa) == 'GGT' and Seq(f_str[start+codon:start+codon+3]).translate() == 'A':
-                a_count[start+codon:start+codon+3] += 1
-for z,x in zip(a_count, read_count):
-    if x == 0 and z > 0:
-        print('error')
-normalized = np.divide(a_count, read_count, where=read_count != 0)
-print(cnt, samfile.count())
-normalized[np.isnan(normalized)] = 0
-normalized[np.isinf(normalized)] = 0
-amino_list = list(normalized)[2530:2530+1086:3]
-print('average', np.average(amino_list))
-read_avg = []
-coverage_counted_reads = read_count/cnt
-for idx in range(2530, 2530+1086, 3):
-    read_avg.append(np.average(coverage_counted_reads[idx:idx+3]))
 
-print(len(read_avg), len(amino_list))
+        codon_start_offset = ((AA_start-start) % 3)
+        read_codon_start = codon_start_offset + start
+        codon_end_offset = ((end - read_codon_start) % 3)
+        read_codon_end = end - codon_end_offset
+        if ((read_codon_start-AA_start)/3).is_integer():
+            read_first_aa = int((read_codon_start-AA_start)/3)
+        else:
+            print(f"Warning bug in code, codon does not match read idx: {idx}. exiting")
+            exit()
+        if f_str[read_codon_start:read_codon_end] == forward_str[codon_start_offset:len(forward_str)-codon_end_offset]: continue
+        f_nucl = f_str[read_codon_start:read_codon_end]
+        read_nucl = forward_str[codon_start_offset:len(forward_str)-codon_end_offset]
+        f_aa = Seq(f_nucl).translate()
+        read_aa = Seq(read_nucl).translate()
+        aa_diff = [(pos, pos+read_first_aa, x, y) for pos, (x, y) in enumerate(zip(f_aa, read_aa)) if x != y]
+        # print(aa_diff)
+        while len(aa_diff) > len(read_mut_cnt):
+            read_mut_cnt.append(0)
+        read_mut_cnt[len(aa_diff)-1] += 1
+        for mut in aa_diff:
+            if mut[3] == 'A' or (mut[2] == 'A' and mut[3] == 'G'):
+                alanine_mut_cnt += 1
+                aa_alanine_muts[mut[1]] += 1
+            else:
+                alt_mut_cnt += 1
+                aa_alt_muts[mut[1]] += 1
+        # , alanine_mut_cnt, alt_mut_cnt
+        # print(read_codon_start, (read_codon_start-AA_start)/3, codon_start_offset)
+        # if idx > 10: exit()
+        continue
+read_cnt = idx+1
+print(read_mut_cnt)
+print(f"alanine mutations {alanine_mut_cnt} alternativemutations {alt_mut_cnt}")
+print(f"Readcnt {read_cnt} used reads {read_passed_cnt}")
+aa_coverage = []
+for codon_start in range(AA_start, AA_end, 3):
+    aa_coverage.append(sum(read_count[codon_start:codon_start+3])/3)
 result_dict = {
-    'amino_acid':list(amino_str),
-    'coverage_total': read_avg,
-    'alanine_mut':amino_list
+    'amino_acid': list(amino_str),
+    'coverage': aa_coverage,
+    'alanine_muts':aa_alanine_muts,
+    'alt_muts':aa_alt_muts
 }
 df = pd.DataFrame(result_dict)
 
 df.to_csv(output.split('.')[0]+'.csv')
-
-fig = plt.figure()
-plt.title(output)
-plt.plot(list(range(0, len(amino_list))), amino_list)
-plt.xlabel('AminoAcid Pos')
-plt.ylabel('MutFreq\nNumAlanineMutations/Reads')
-plt.ylim(0,0.05)
-fig.savefig(output, dpi=200)
-
