@@ -25,13 +25,6 @@ if len(sys.argv) != 4 and not debug:
     exit()
 
 
-# Codon table:
-# bases = "TCAG".upper()
-# codons = [a + b + c for a in bases for b in bases for c in bases]
-# amino_acids = 'FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG'
-# codon_table = dict(zip(codons, amino_acids))
-
-
 if debug:
     fasta_file = '/home/dwarrel/projects/data_testing/k2_toxin/template_gal_k2.fasta'
     sam_file = '/home/dwarrel/projects/data_testing/k2_toxin/bowtie_barcode3.sam'
@@ -48,9 +41,7 @@ else:
     sam_file = sys.argv[1]
     fasta_file = sys.argv[2]
     output = sys.argv[3]
-# import seaborn as sns
 fasta_dict = {}
-# with open('/home/tycho/tmp_r/test_files/template_gal_k2.fasta', "r") as file:
 with open(fasta_file, "r") as file:
     for record in SeqIO.parse(file, "fasta"):
         fasta_dict[record.id] = record
@@ -60,6 +51,7 @@ samfile = pysam.AlignmentFile(sam_file, "rb")
 read_passed_cnt, read_mut_cnt, alanine_mut_cnt, alt_mut_cnt = 0, [0, 0, 0, 0, 0], 0, 0
 read_count = np.array([0]*len(f_str))
 aa_alanine_muts = np.array([0]*len(amino_str))
+aa_alanine_only = np.array([0]*len(amino_str))
 aa_alt_muts = np.array([0]*len(amino_str))
 idx = 0
 for idx, read in enumerate(samfile.fetch()):
@@ -90,29 +82,28 @@ for idx, read in enumerate(samfile.fetch()):
         else:
             print(f"Warning bug in code, codon does not match read idx: {idx}. exiting")
             exit()
-        if f_str[read_codon_start:read_codon_end] == forward_str[codon_start_offset:len(forward_str)-codon_end_offset]: continue
+        if f_str[read_codon_start:read_codon_end] == forward_str[codon_start_offset:len(forward_str)-codon_end_offset]:
+            read_mut_cnt[0] += 1
+            continue
         f_nucl = f_str[read_codon_start:read_codon_end]
         read_nucl = forward_str[codon_start_offset:len(forward_str)-codon_end_offset]
         f_aa = Seq(f_nucl).translate()
         read_aa = Seq(read_nucl).translate()
         aa_diff = [(pos, pos+read_first_aa, x, y) for pos, (x, y) in enumerate(zip(f_aa, read_aa)) if x != y]
-        # print(aa_diff)
-        while len(aa_diff) > len(read_mut_cnt):
+        while len(aa_diff) >= len(read_mut_cnt):
             read_mut_cnt.append(0)
-        read_mut_cnt[len(aa_diff)-1] += 1
+        read_mut_cnt[len(aa_diff)] += 1
         for mut in aa_diff:
             if mut[3] == 'A' or (mut[2] == 'A' and mut[3] == 'G'):
                 alanine_mut_cnt += 1
                 aa_alanine_muts[mut[1]] += 1
+                if len(aa_diff) == 1:
+                    aa_alanine_only[mut[1]] += 1
             else:
                 alt_mut_cnt += 1
                 aa_alt_muts[mut[1]] += 1
-        # , alanine_mut_cnt, alt_mut_cnt
-        # print(read_codon_start, (read_codon_start-AA_start)/3, codon_start_offset)
-        # if idx > 10: exit()
-        continue
 read_cnt = idx+1
-print(read_mut_cnt)
+print(f"Number of mutations per read: {read_mut_cnt}")
 print(f"alanine mutations {alanine_mut_cnt} alternativemutations {alt_mut_cnt}")
 print(f"Readcnt {read_cnt} used reads {read_passed_cnt}")
 aa_coverage = []
@@ -122,7 +113,8 @@ result_dict = {
     'amino_acid': list(amino_str),
     'coverage': aa_coverage,
     'alanine_muts':aa_alanine_muts,
-    'alt_muts':aa_alt_muts
+    'alt_muts':aa_alt_muts,
+    'single_alanine':aa_alanine_only
 }
 df = pd.DataFrame(result_dict)
 
