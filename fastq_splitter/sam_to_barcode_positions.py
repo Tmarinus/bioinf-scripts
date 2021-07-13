@@ -20,7 +20,7 @@ args = parser.parse_args()
 
 sam_file_name = args.sam_file.split('/')[-1].split('.')[0]
 if args.o:
-    args.o = args.o.strip('.csv')
+    csv_name = args.o.strip('.csv')
 else:
     csv_name = sam_file_name
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import sys
+import argparse
+
 try:
     from Bio import SeqIO
     from Bio.Seq import Seq
@@ -9,14 +11,19 @@ except ImportError:
     print(f'Script requires BioPython module to be installed run\npip3 install BioPython --user')
     exit()
 
-if len(sys.argv) != 4:
-    print(f'To run give paths to vcf file, fasta and output\n'
-          f'eg: vcf_to_fasta test_files/barcode3_indels.vcf test_files/template_gal_k2.fasta output.fasta')
-    exit()
+parser = argparse.ArgumentParser(usage=f'To run give paths to vcf file, fasta and output\n'
+           f'eg: vcf_to_fasta test_files/barcode3_indels.vcf test_files/template_gal_k2.fasta output.fasta\n',
+           description=f'Script requires BioPython module to be installed run\npip3 install BioPython --user')
 
-vcf_file = sys.argv[1]
-fasta_file = sys.argv[2]
-output = sys.argv[3]
+parser.add_argument('vcf_file', help='path to vcf file')
+parser.add_argument('fasta_file', help='path to fasta file')
+parser.add_argument('output', help='path and file name for output')
+
+args = parser.parse_args()
+
+vcf_file = args.vcf_file
+fasta_file = args.fasta_file
+output = args.output
 
 fasta_dict = {}
 with open(fasta_file, "r") as file:
