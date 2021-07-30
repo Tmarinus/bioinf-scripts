@@ -16,6 +16,7 @@ args = parser.parse_args()
 
 from Bio import SeqIO
 
+# Check for barcode file or barcodes given as arguments
 barcodes = {}
 if args.b:
     barcodes += dict(zip(args.b.split(','), range(0, len(args.b.split(',')))))
@@ -24,8 +25,10 @@ if args.bf:
         barcodes[record.id] = str(record.seq)
 fastq_name = args.fastq_file.split('/')[-1]
 
+# Parse output naming and location
 if args.o and not args.o.endswith('/'):
     args.o += '/'
+# Open file handlers for the output fastq files
 open_files = {
     'nobar': open(args.o+f"no_barcode-{fastq_name}", 'w')
 }
@@ -35,10 +38,11 @@ for barcode in barcodes.keys():
 open_files['all'] = open(args.o+f"all-{fastq_name}", 'w')
 
 
+# Append read to fastq file
 def append_fastq(seq, path):
     SeqIO.write(seq, path, 'fastq')
 
-
+# Loop through records in fastq file
 for record in SeqIO.parse(args.fastq_file, 'fastq'):
     barcode_hits = []
     tmp = len(record)
