@@ -72,7 +72,8 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
     append_fastq(record, cleaned_fq)
 print(f"Total reads: {tot_reads}\nReplaced {sum(distances)} inserts")
 import numpy
-for number, dist_cnt in enumerate(distances[:numpy.max(numpy.nonzero(distances))+1]):
-    print(f"Mismatches {number} occurrences: {dist_cnt}")
+if sum(distances):
+    for number, dist_cnt in enumerate(distances[:numpy.max(numpy.nonzero(distances))+1]):
+        print(f"Mismatches {number} occurrences: {dist_cnt}")
 
 cleaned_fq.close()
