@@ -21,6 +21,9 @@ args = parser.parse_args()
 sam_file_name = args.sam_file.split('/')[-1].split('.')[0]
 if args.o:
     csv_name = args.o.strip('.csv')
+    if not csv_name.endswith('/'):
+        csv_name += '_'
+
 else:
     csv_name = sam_file_name
 
@@ -54,6 +57,8 @@ for record in SeqIO.parse(args.ref_fasta, 'fasta'):
     ref_sequence[record.id] = str(record.seq)
     position_dict[record.id] = {}
 
+barcode_reads = defaultdict(list)
+
 for read in samfile:
     if read.is_unmapped: continue
     q_q = read.query_qualities
@@ -63,6 +68,9 @@ for read in samfile:
     found_barcodes = read.query_name.split('_')[:-1]
     for barcode in found_barcodes:
         barcode_id, bar_positions = barcode.split(':')
+        read_positions = [int(pos) for pos in bar_positions.split(',')]
+        mapped_positions = [int(pos)+read.reference_start for pos in bar_positions.split(',')]
+        barcode_reads[barcode_id.split(':')[0]].append((read.query_name.split('_')[-1], read_positions, mapped_positions))
         try:
             position_dict[read.reference_name][barcode_id.split(':')[0]][[int(pos)+read.reference_start for pos in bar_positions.split(',')]] += 1
         except KeyError:
@@ -76,4 +84,19 @@ for trans_id, sequence in ref_sequence.items():
     for barcode, values in barcodes.items():
         csv_dict[barcode] = list(values)
     df = pd.DataFrame(csv_dict)
-    df.to_csv(f"{csv_name}_{trans_id}.csv")
+    df.to_csv(f"{csv_name}{trans_id}.csv")
+
+
+for barcode, values in barcode_reads.items():
+    read_ids, read_positions, mapped_positions = [], [], []
+    for v in values:
+        # print(v[1])
+        # print([str(x) for x in v[1]])
+        read_ids.append(v[0])
+        read_positions.append(",".join([str(x) for x in v[1]]))
+        mapped_positions.append(",".join([str(x) for x in v[2]]))
+        # read_positions.append(v[1])
+        # mapped_positions.append(v[2])
+    csv_dict = {'read_ids': read_ids, 'read_positions': read_positions, 'mapped_positions': mapped_positions}
+    df = pd.DataFrame(csv_dict)
+    df.to_csv(f"{csv_name}{barcode}_mapping.csv")

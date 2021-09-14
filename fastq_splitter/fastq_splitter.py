@@ -19,7 +19,8 @@ parser.add_argument('-em', default=False, action='store_true', help='Report exte
                                                                                                   'and mismatch locations.')
 parser.add_argument('-el', metavar='--edge-length', help='Minimum edge length to qualify for a barcode hit on the edges.',
                     default=0, type=int)
-parser.add_argument('-qc', metavar='--quality-cutoff', default=0, help='If phred score is below this score do not count as mismatch. Default off (0)')
+parser.add_argument('-qc', metavar='--quality-cutoff', default=0, help='If phred score is below this score do not count as mismatch. Default off (0)',
+                    type=int)
 parser.add_argument('-nr', default=False, action='store_true', help='Do not remove barcode from the read.')
 parser.add_argument('-kd', default=False, action='store_true',
                     help='If multiple barcodes are found in a read also put them in the individual fastq files.')
@@ -41,13 +42,18 @@ fastq_name = args.fastq_file.split('/')[-1]
 if args.o and not args.o.endswith('/'):
     args.o += '/'
 # Open file handlers for the output fastq files
-open_files = {
-    'nobar': open(args.o+f"no_barcode-{fastq_name}", 'w')
-}
-for barcode in barcodes.keys():
-    open_files[barcode] = open(args.o+f"bar_{barcode}-{fastq_name}", 'w')
+try:
+    open_files = {
+        'nobar': open(args.o+f"no_barcode-{fastq_name}", 'w')
+    }
+    for barcode in barcodes.keys():
+        open_files[barcode] = open(args.o+f"bar_{barcode}-{fastq_name}", 'w')
 
-open_files['all'] = open(args.o+f"all-{fastq_name}", 'w')
+    open_files['all'] = open(args.o+f"all-{fastq_name}", 'w')
+except FileNotFoundError as err:
+    print(err)
+    print(f"Output folder probably doesnt exist yet. Please create the correct output folder first.")
+
 
 
 # Append read to fastq file
@@ -184,6 +190,11 @@ if args.em:
 
 tot_reads = 0
 tot_reads_with_barcode = 0
+total_nucleotides_removed = 0
+total_mutations_in_barcodes = 0
+barcode_count = {}
+for bar_id, barcode in barcodes.items():
+    barcode_count[bar_id] = 0
 # Loop through records in fastq file
 for record in SeqIO.parse(args.fastq_file, 'fastq'):
     tot_reads += 1
@@ -195,6 +206,7 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
             pos_list, e_metrics = find_tag(barcode, str(record.seq), record.letter_annotations['phred_quality'], args.ms, args.qc)
         else:
             pos_list, e_metrics = euclidian_dist(barcode, str(record.seq), record.letter_annotations['phred_quality'], args.mm, args.qc)
+        total_mutations_in_barcodes += len(e_metrics)
         for mut in e_metrics:
             if len(mut) > 1:
                 mut = "|".join([str(m[0]) for m in mut]), "|".join([str(m[1]) for m in mut]), "|".join([str(m[2]) for m in mut]), \
@@ -207,10 +219,12 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
         record_cnt_barcodes += len(pos_list)
         if pos_list:
             barcode_hits.append(bar_id)
+            barcode_count[bar_id] += len(pos_list)
             if len(pos_list) > 1:
                 barcode_metrics['dup'] += 1
             if not args.nr:
                 removed = 0
+                tmp_len = len(record)
                 for idx, pos in enumerate(pos_list):
                     if isinstance(pos, tuple):
                         record = record[pos[1]:]
@@ -219,6 +233,7 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
                         record = record[:pos-removed] + record[(pos+len(barcode))-removed:]
                         pos_list[idx] = pos_list[idx] - removed
                         removed += len(barcode)
+                total_nucleotides_removed += (tmp_len - len(record))
             record.id = f"{bar_id}:{','.join(map(str, pos_list))}_{record.id}"
     append_fastq(record, open_files['all'])
     if len(barcode_hits) == 0:
@@ -238,9 +253,16 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
         except KeyError:
             open_files[bar_ids] = open(args.o+f"bars_{'_'.join(bar_ids)}-{fastq_name}", 'w')
             append_fastq(record, open_files[bar_ids])
-print(f"Total reads: {tot_reads}\nReads with barcode: {tot_reads_with_barcode}\n"
-      f"Reads without barcode: {tot_reads-tot_reads_with_barcode}\nTotal barcodes: {tot_barcodes}\n\n"
-      f"Number of reads with duplicate barcodes: {barcode_metrics['dup']}\nReads with multiple barcodes: {barcode_metrics['mult']}")
+print(f"Total reads: {tot_reads}\nReads with barcode: {tot_reads_with_barcode} ({tot_reads_with_barcode/tot_reads:.03f})\n"
+      f"Reads without barcode: {tot_reads-tot_reads_with_barcode} ({(tot_reads-tot_reads_with_barcode)/tot_reads:.03f})\nTotal barcodes: {tot_barcodes}\n\n"
+      f"Number of reads with duplicate barcodes: {barcode_metrics['dup']} ({barcode_metrics['dup']/tot_reads:.03f})"
+      f"\nReads with multiple barcodes: {barcode_metrics['mult']} ({barcode_metrics['mult']/tot_reads:.03f})\n")
+print(f"Barcodes found:")
+for bar_id, cnt in barcode_count.items():
+    print(f"{bar_id}: {cnt}")
+if args.el:
+    print(f"\nTotal bases of barcodes: {total_nucleotides_removed}, total mutations found: {total_mutations_in_barcodes}\n"
+          f"Mutation rate in barcodes: {total_mutations_in_barcodes/total_nucleotides_removed:0.3f}")
 for file in open_files.values():
     file.close()
 if args.em:
