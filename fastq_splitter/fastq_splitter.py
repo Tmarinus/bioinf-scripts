@@ -21,6 +21,9 @@ parser.add_argument('-el', metavar='--edge-length', help='Minimum edge length to
                     default=0, type=int)
 parser.add_argument('-qc', metavar='--quality-cutoff', default=0, help='If phred score is below this score do not count as mismatch. Default off (0)',
                     type=int)
+parser.add_argument('-sqc', metavar='--score-quality-cutoff', default=37, help='If phred score is below this score count is as sequencing error, if'
+                                                                              'score is equal or above it is a biological error. Default (37)',
+                    type=int)
 parser.add_argument('-nr', default=False, action='store_true', help='Do not remove barcode from the read.')
 parser.add_argument('-kd', default=False, action='store_true',
                     help='If multiple barcodes are found in a read also put them in the individual fastq files.')
@@ -42,6 +45,7 @@ fastq_name = args.fastq_file.split('/')[-1]
 if args.o and not args.o.endswith('/'):
     args.o += '/'
 # Open file handlers for the output fastq files
+open_files = None
 try:
     open_files = {
         'nobar': open(args.o+f"no_barcode-{fastq_name}", 'w')
@@ -50,6 +54,7 @@ try:
         open_files[barcode] = open(args.o+f"bar_{barcode}-{fastq_name}", 'w')
 
     open_files['all'] = open(args.o+f"all-{fastq_name}", 'w')
+    open_files['bar'] = open(args.o+f"bar-{fastq_name}", 'w')
 except FileNotFoundError as err:
     print(err)
     print(f"Output folder probably doesnt exist yet. Please create the correct output folder first.")
@@ -184,7 +189,7 @@ barcode_metrics = defaultdict(int)
 csv_writer = None
 if args.em:
     import csv
-    csv_fh = open(args.o+'extended_metrics.csv', 'w')
+    csv_fh = open(args.o+f'{fastq_name}_extended_metrics.csv', 'w')
     csv_writer = csv.writer(csv_fh, delimiter=',')
     csv_writer.writerow(['read', 'barcode', 'mut_pos', 'ref', 'mut', 'phred'])
 
@@ -192,6 +197,8 @@ tot_reads = 0
 tot_reads_with_barcode = 0
 total_nucleotides_removed = 0
 total_mutations_in_barcodes = 0
+bio_mut = 0
+seq_mut = 0
 barcode_count = {}
 for bar_id, barcode in barcodes.items():
     barcode_count[bar_id] = 0
@@ -208,6 +215,11 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
             pos_list, e_metrics = euclidian_dist(barcode, str(record.seq), record.letter_annotations['phred_quality'], args.mm, args.qc)
         total_mutations_in_barcodes += len(e_metrics)
         for mut in e_metrics:
+            for m in mut:
+                if m[3] < args.sqc:
+                    seq_mut += 1
+                else:
+                    bio_mut += 1
             if len(mut) > 1:
                 mut = "|".join([str(m[0]) for m in mut]), "|".join([str(m[1]) for m in mut]), "|".join([str(m[2]) for m in mut]), \
                       "|".join([str(m[3]) for m in mut])
@@ -221,6 +233,10 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
             barcode_hits.append(bar_id)
             barcode_count[bar_id] += len(pos_list)
             if len(pos_list) > 1:
+                # print(record)
+                # print(record.seq)
+                # print(pos_list)
+                # print('\n')
                 barcode_metrics['dup'] += 1
             if not args.nr:
                 removed = 0
@@ -239,9 +255,11 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
     if len(barcode_hits) == 0:
         append_fastq(record, open_files['nobar'])
     elif len(barcode_hits) == 1:
+        append_fastq(record, open_files['bar'])
         tot_reads_with_barcode += 1
         append_fastq(record, open_files[barcode_hits[0]])
     elif len(barcode_hits) > 1:
+        append_fastq(record, open_files['bar'])
         tot_reads_with_barcode += 1
         barcode_metrics['mult'] += 1
         if args.kd:
@@ -262,7 +280,8 @@ for bar_id, cnt in barcode_count.items():
     print(f"{bar_id}: {cnt}")
 if args.el:
     print(f"\nTotal bases of barcodes: {total_nucleotides_removed}, total mutations found: {total_mutations_in_barcodes}\n"
-          f"Mutation rate in barcodes: {total_mutations_in_barcodes/total_nucleotides_removed:0.3f}")
+          f"Mutation rate in barcodes: {total_mutations_in_barcodes/total_nucleotides_removed:0.3f}\n"
+          f"Bio mutations: {bio_mut} Seq mutations: {seq_mut} percentage Bio: {bio_mut/(seq_mut+bio_mut):.03f}")
 for file in open_files.values():
     file.close()
 if args.em:
