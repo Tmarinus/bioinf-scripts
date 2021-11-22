@@ -47,7 +47,7 @@ if output.endswith('/'):
         os.makedirs(output)
     output = output+'output'
 else:
-    sam_output = "/".join(output.split('/')[:-1])+'/sam_files'
+    sam_output = "/".join(output.split('/')[:-1])+f"/sam_files_{output.split('/')[-1]}"
 
 AA_length = int((AA_end+2 - AA_start) / 3)
 
