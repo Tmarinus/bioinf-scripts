@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import sys
 try:
     import os
@@ -21,12 +20,13 @@ except ImportError:
 
 AA_list = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', 'X', 'Z', 'J', 'U', '*']
 
-parser = argparse.ArgumentParser(usage=f'Given sam, fasta and AA sequence calculates the Codon mutations in a sam file.\n',
+parser = argparse.ArgumentParser(usage=f'Param order; sam_path, fasta_path, output_path, AA_start (in fasta), AA_end.\n'
+                                       f'Optional use --split_sam to split the sam file based on read conditions. 🐻',
            description=f'Script requires BioPython module to be installed run\npip3 install BioPython --user')
 
 parser.add_argument('sam_file', help='path to sam file')
-parser.add_argument('fasta_file', help='path to fasta file')
-parser.add_argument('output', help='path and file name for output')
+parser.add_argument('fasta_file', help='path to fasta file used for read mapping')
+parser.add_argument('output', help='file name and path for output (will create output.xslx and if split sam enabled a sam folder for the output)')
 parser.add_argument('aa_start', help='AA starting position in fasta file (start counting at 1)', type=int)
 parser.add_argument('aa_end', help='AA ending position in fasta file (this is the last nucleotide that is still part of the AA seq)', type=int)
 parser.add_argument('--split_sam', help='Split sam files, depending on read type, will be stored in sam folder', action='store_true')
