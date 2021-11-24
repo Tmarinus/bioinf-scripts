@@ -39,7 +39,7 @@ AA_end = args.aa_end - 1
 #TODO hack
 # amino_str = args.aa
 # ins_site = 'CCTGCAGGG'  # sbf1
-output = args.output
+output = os.path.abspath(args.output)
 
 if output.endswith('/'):
     sam_output = output+'sam_files'
