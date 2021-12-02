@@ -30,6 +30,11 @@ parser.add_argument('output', help='file name and path for output (will create o
 parser.add_argument('aa_start', help='AA starting position in fasta file (start counting at 1)', type=int)
 parser.add_argument('aa_end', help='AA ending position in fasta file (this is the last nucleotide that is still part of the AA seq)', type=int)
 parser.add_argument('--split_sam', help='Split sam files, depending on read type, will be stored in sam folder', action='store_true')
+parser.add_argument('--mut_quality', help=f'Output mutation quality. Will be split on (expected) Alanine mut or non Alanine mut'
+                                          f'Default calculation is minimum quality of the three nucleotides of the codon', action='store_true')
+parser.add_argument('--mut_quality_max', help=f'Set mut_quality to maximum of three codons', action='store_true')
+parser.add_argument('--mut_quality_avg', help=f'Set mut_quality to average of three codons', action='store_true')
+
 args = parser.parse_args()
 
 fasta_file = args.fasta_file
@@ -66,7 +71,9 @@ aa_alt_muts = np.array([0]*AA_length)
 idx = 0
 mut_list = [dict((AA, 0) for AA in AA_list) for x in range(AA_length)]
 sam_writers = {}
-
+mut_quality_alanine = []
+mut_quality_other = []
+mut_quality = None
 
 if args.split_sam:
     if not os.path.exists(sam_output):
@@ -78,12 +85,16 @@ if args.split_sam:
         'no_mut': pysam.AlignmentFile(f"{sam_output}/no_mut.bam", "wb", template=samfile),
     }
 
-
 def write_sams(key, read):
     if not args.split_sam: return
     if key not in sam_writers.keys():
         sam_writers[key] = pysam.AlignmentFile(f"{sam_output}/{key}.bam", "wb", template=samfile)
     sam_writers[key].write(read)
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 for idx, read in enumerate(samfile.fetch()):
     # Skipping all reads that are not perfectly mapped!
@@ -127,17 +138,37 @@ for idx, read in enumerate(samfile.fetch()):
         write_sams('no_mut', read)
         continue
 
-    phred_quality = [ord(x)-33 for x in read.qual]
+    phred_quality = [ord(x)-33 for x in read.qual][codon_start_offset:len(forward_str)-codon_end_offset]
+    # phred_quality = read.qual[codon_start_offset:len(forward_str)-codon_end_offset]
     f_nucl = f_str[read_codon_start:read_codon_end]
     read_nucl = forward_str[codon_start_offset:len(forward_str)-codon_end_offset]
     f_aa = Seq(f_nucl).translate()
     read_aa = Seq(read_nucl).translate()
-    aa_diff = [(pos, pos+read_first_aa, x, y) for pos, (x, y) in enumerate(zip(f_aa, read_aa)) if x != y]
+    # print(phred_quality[::3])
+    # print(len(read_aa), len(list(phred_quality[::3])))
+    aa_diff = [(pos, pos+read_first_aa, x, y, q) for pos, (x, y, q) in enumerate(zip(f_aa, read_aa, chunks(phred_quality, 3))) if x != y]
     while len(aa_diff) >= len(read_mut_cnt): # Expand array size to be able to count number of mutations
         read_mut_cnt.append(0)
     read_mut_cnt[len(aa_diff)] += 1
     write_sams(len(aa_diff), read)
     for mut in aa_diff: # iterate over mutations
+        if args.mut_quality:
+            if args.mut_quality_max:
+                mut_quality = max(mut[4])
+            elif args.mut_quality_avg:
+                mut_quality = sum(mut[4])/3
+            else:
+                mut_quality = min(mut[4])
+
+        # if ':' in mut[4]:
+        #     print(list(chunks(phred_quality, 3)))
+        #     print(mut)
+        #     print(mut[4])
+        #     print(read.qual[codon_start_offset:len(forward_str)-codon_end_offset][mut[0]:])
+        #     print(read.qual[codon_start_offset:len(forward_str)-codon_end_offset])
+        #     print(f_aa[mut[0]])
+        #     print(read_aa[mut[0]])
+        # exit()
         try:
             mut_list[mut[1]][mut[3]] += 1
         except KeyError:
@@ -146,12 +177,14 @@ for idx, read in enumerate(samfile.fetch()):
         # Check if alanine mutation (or guanine)
         if mut[3] == 'A' or (mut[2] == 'A' and mut[3] == 'G'):
             alanine_mut_cnt += 1
+            mut_quality_alanine.append(mut_quality)
             # Was alanine the only mutation?
             if len(aa_diff) == 1:
                 aa_alanine_only[mut[1]] += 1
         else:
             alt_mut_cnt += 1
             aa_alt_muts[mut[1]] += 1
+            mut_quality_other.append(mut_quality)
 read_cnt = idx+1
 print(f"Alanine mutations {alanine_mut_cnt} other mutations {alt_mut_cnt}\n"
       f"Reads with only a single alanine mutation: {sum(aa_alanine_only)} {(sum(aa_alanine_only)/read_passed_cnt)*100:0.1f}% of passed reads")
@@ -183,8 +216,13 @@ mutations_sheet.set_column(0, 100, 5, cell_format=cell_format)
 #Write read mut count
 num_mut_df = pd.DataFrame({'#mutations': list(range(len(read_mut_cnt))), 'occurrences': read_mut_cnt})
 num_mut_df.to_excel(writer, sheet_name="muts_per_read", index=False)
+#Write mutation quality
+num_mut_df = pd.DataFrame({'expected (Alanine)': pd.Series(mut_quality_alanine), 'other': pd.Series(mut_quality_other)})
+num_mut_df.to_excel(writer, sheet_name="mutation_qualities", index=False)
 
 writer.save()
+print(f"\nsamfile location: {sam_output}/")
+print(f"xlsx output file: {output}.xlsx")
 
 for s_writer in sam_writers.values():
     s_writer.close()
