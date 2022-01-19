@@ -75,6 +75,15 @@ sam_writers = {}
 mut_quality_alanine = []
 mut_quality_other = []
 mut_quality = None
+tmp_muts = []
+
+mut_qualities = {
+    'singl_alanine': [],
+    'not_alone_alanine': [],
+    'singl_other': [],
+    'other_besides_alanine': [],
+    'other_no_alanine': [],
+}
 
 if args.split_sam:
     if not os.path.exists(sam_output):
@@ -109,10 +118,8 @@ for idx, read in enumerate(samfile.fetch()):
     if 'S' in read.cigarstring:
         write_sams('S', read)
         continue
-    read_passed_cnt += 1
     forward_str = read.get_forward_sequence()
     start, end = read.reference_start, read.reference_end
-    read_count[start:end] += 1
     # Ignore the part of the read that is not within the gene region of interest.
     if start < AA_start:
         forward_str = forward_str[AA_start-start:]
@@ -121,8 +128,11 @@ for idx, read in enumerate(samfile.fetch()):
         forward_str = forward_str[:AA_end-end]
         end = AA_end
     if end-start != len(forward_str):
-        print('error, end and start are mixed?')
-        exit()
+        print(f"Significant error found within a read. This can either be that the end and start of region of interest are mixed, or a"
+              f"incorrect read. Program will continue to run but check this: \n\n {read}")
+        continue
+    read_passed_cnt += 1
+    read_count[start:end] += 1
 
     codon_start_offset = ((AA_start-start) % 3)
     read_codon_start = codon_start_offset + start
@@ -140,18 +150,16 @@ for idx, read in enumerate(samfile.fetch()):
         continue
 
     phred_quality = [ord(x)-33 for x in read.qual][codon_start_offset:len(forward_str)-codon_end_offset]
-    # phred_quality = read.qual[codon_start_offset:len(forward_str)-codon_end_offset]
     f_nucl = f_str[read_codon_start:read_codon_end]
     read_nucl = forward_str[codon_start_offset:len(forward_str)-codon_end_offset]
     f_aa = Seq(f_nucl).translate()
     read_aa = Seq(read_nucl).translate()
-    # print(phred_quality[::3])
-    # print(len(read_aa), len(list(phred_quality[::3])))
     aa_diff = [(pos, pos+read_first_aa, x, y, q) for pos, (x, y, q) in enumerate(zip(f_aa, read_aa, chunks(phred_quality, 3))) if x != y]
     while len(aa_diff) >= len(read_mut_cnt): # Expand array size to be able to count number of mutations
         read_mut_cnt.append(0)
     read_mut_cnt[len(aa_diff)] += 1
     write_sams(len(aa_diff), read)
+    alanine_found = False
     for mut in aa_diff: # iterate over mutations
         if args.mut_quality:
             if args.mut_quality_max:
@@ -161,31 +169,38 @@ for idx, read in enumerate(samfile.fetch()):
             else:
                 mut_quality = min(mut[4])
 
-        # if ':' in mut[4]:
-        #     print(list(chunks(phred_quality, 3)))
-        #     print(mut)
-        #     print(mut[4])
-        #     print(read.qual[codon_start_offset:len(forward_str)-codon_end_offset][mut[0]:])
-        #     print(read.qual[codon_start_offset:len(forward_str)-codon_end_offset])
-        #     print(f_aa[mut[0]])
-        #     print(read_aa[mut[0]])
-        # exit()
         try:
             mut_list[mut[1]][mut[3]] += 1
         except KeyError:
             print(mut)
+            print("error was found in above mutation. Contact support.")
             exit()
         # Check if alanine mutation (or guanine)
         if mut[3] == 'A' or (mut[2] == 'A' and mut[3] == 'G'):
             alanine_mut_cnt += 1
             mut_quality_alanine.append(mut_quality)
+            alanine_found = True
             # Was alanine the only mutation?
             if len(aa_diff) == 1:
+                mut_qualities['singl_alanine'].append(mut_quality)
                 aa_alanine_only[mut[1]] += 1
+            else:
+                mut_qualities['not_alone_alanine'].append(mut_quality)
         else:
             alt_mut_cnt += 1
             aa_alt_muts[mut[1]] += 1
             mut_quality_other.append(mut_quality)
+            if len(aa_diff) == 1:
+                mut_qualities['singl_other'].append(mut_quality)
+            else:
+                tmp_muts.append(mut_quality)
+    if tmp_muts:
+        if alanine_found:
+            mut_qualities['other_besides_alanine'].extend(tmp_muts)
+        else:
+            mut_qualities['other_no_alanine'].extend(tmp_muts)
+
+
 read_cnt = idx+1
 print(f"Alanine mutations {alanine_mut_cnt} other mutations {alt_mut_cnt}\n"
       f"Reads with only a single alanine mutation: {sum(aa_alanine_only)} {(sum(aa_alanine_only)/read_passed_cnt)*100:0.1f}% of passed reads")
@@ -218,7 +233,14 @@ mutations_sheet.set_column(0, 100, 5, cell_format=cell_format)
 num_mut_df = pd.DataFrame({'#mutations': list(range(len(read_mut_cnt))), 'occurrences': read_mut_cnt})
 num_mut_df.to_excel(writer, sheet_name="muts_per_read", index=False)
 #Write mutation quality
-num_mut_df = pd.DataFrame({'expected (Alanine)': pd.Series(mut_quality_alanine), 'other': pd.Series(mut_quality_other)})
+num_mut_df = pd.DataFrame({'expected (Alanine)': pd.Series(mut_quality_alanine),
+                           'other': pd.Series(mut_quality_other),
+                           'Single alanine': pd.Series(mut_qualities['singl_alanine']),
+                           'Alanine with others': pd.Series(mut_qualities['not_alone_alanine']),
+                           'Single non alanine': pd.Series(mut_qualities['singl_other']),
+                           'Other next to alanine': pd.Series(mut_qualities['other_besides_alanine']),
+                           'Other no alanine': pd.Series(mut_qualities['other_no_alanine']),
+                           })
 num_mut_df.to_excel(writer, sheet_name="mutation_qualities", index=False)
 
 writer.save()
