@@ -14,8 +14,9 @@ try:
     import matplotlib.pyplot as plt
     from collections import defaultdict
 except ImportError:
-    print(f'Script requires pysam module to be installed run\npip3 install pysam --user\npip3 install BioPython --user\n'
-          f'pip3 install alive_progress --user\npip3 install matplotlib --user\npip3 install pandas --user')
+    print(f'Script requires pysam, pandas, numpy, Biopython, matplotlib modules to be installed run\n'
+          f'pip3 install pysam --user\npip3 install BioPython --user\n'
+          f'pip3 install matplotlib --user\npip3 install pandas --user')
     exit()
 
 AA_list = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', 'X', 'Z', 'J', 'U', '*']

@@ -2,10 +2,7 @@
 import argparse
 parser = argparse.ArgumentParser(description="Calculate mutations from sam file.")
 parser.add_argument('sam_file')
-# parser.add_argument('fasta_file')
 args = parser.parse_args()
-import subprocess
-import pysam
 
 file_p = args.sam_file
 ins_ranges = [range(4867, 4956), range(4957, 5046), range(5047, 5133)]
@@ -31,7 +28,7 @@ for read in samfile:
         unmapped += 1
         continue
     if not (320 < len(read.seq) < 340):
-        print(read.seq)
+        # print(read.seq)
         size_change += 1
     tmp_ins, tmp_dels = 0, 0
     for cigar in read.cigartuples:

@@ -29,8 +29,22 @@ parser.add_argument('-kd', default=False, action='store_true',
                     help='If multiple barcodes are found in a read also put them in the individual fastq files.')
 args = parser.parse_args()
 
-from Bio import SeqIO
-from collections import defaultdict
+# Import modules
+try:
+    from Bio import SeqIO
+    from collections import defaultdict
+except ImportError as e:
+    pip_dict = {
+        'Bio': 'biopython',
+    }
+    mis_package = str(e).split('\'')[-2].strip("'")
+    try:
+        install_name = pip_dict[mis_package]
+    except KeyError:
+        install_name = mis_package
+    print(f"Package '{mis_package}' was not found, please install by running:\n"
+          f"pip install {install_name}")
+    exit()
 
 # Check for barcode file or barcodes given as arguments
 barcodes = {}
@@ -56,8 +70,9 @@ try:
     open_files['all'] = open(args.o+f"all-{fastq_name}", 'w')
     open_files['bar'] = open(args.o+f"bar-{fastq_name}", 'w')
 except FileNotFoundError as err:
-    print(err)
-    print(f"Output folder probably doesnt exist yet. Please create the correct output folder first.")
+    print(f"Output folder probably doesnt exist yet. Please create the correct output folder first."
+          f"\n\"{args.o}\"")
+    exit()
 
 
 
@@ -165,23 +180,6 @@ def check_edges(barcode, read, phreds, mm_threshold):
                 if euclid_dist > mm_threshold: break
             if euclid_dist <= mm_threshold:
                 return (0, len(read)-result), metric_arr
-    # try:
-    #     result = [_.start() for _ in re.finditer(barcode[-args.el:], read[:len(barcode)])][0]
-    # except:
-    #     result = False
-    # if result:
-    #     print('second', result)
-    #     if mm_threshold >= len(read[result-1::-1])-(len(barcode)-args.el):
-    #         euclid_dist = max(len(read[result-1::-1])-(len(barcode)-args.el), 0)
-    #         metric_arr = []
-    #         for char_idx, (charB, charR, phred) in enumerate(zip(barcode[:args.el:-1], read[:result-args.el:-1], phreds[:result-args.el:-1])):
-    #             if charB != charR:
-    #                 euclid_dist += 1
-    #                 if args.em:
-    #                     metric_arr.append((result+char_idx, charR, charB, phred))
-    #             if euclid_dist > mm_threshold: break
-    #         if euclid_dist <= mm_threshold:
-    #             return 0, metric_arr
     return False, []
 
 tot_barcodes = 0
@@ -233,10 +231,6 @@ for record in SeqIO.parse(args.fastq_file, 'fastq'):
             barcode_hits.append(bar_id)
             barcode_count[bar_id] += len(pos_list)
             if len(pos_list) > 1:
-                # print(record)
-                # print(record.seq)
-                # print(pos_list)
-                # print('\n')
                 barcode_metrics['dup'] += 1
             if not args.nr:
                 removed = 0
@@ -282,7 +276,10 @@ if args.el:
     print(f"\nTotal bases of barcodes: {total_nucleotides_removed}, total mutations found: {total_mutations_in_barcodes}\n"
           f"Mutation rate in barcodes: {total_mutations_in_barcodes/total_nucleotides_removed:0.3f}\n"
           f"Bio mutations: {bio_mut} Seq mutations: {seq_mut} percentage Bio: {bio_mut/(seq_mut+bio_mut):.03f}")
+print(f"\nFiles stored at:")
 for file in open_files.values():
+    print(f"{file.name}")
     file.close()
 if args.em:
+    print(f"{csv_fh.name}")
     csv_fh.close()

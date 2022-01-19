@@ -12,10 +12,6 @@ parser.add_argument('ref_fasta')
 
 parser.add_argument('-qt', metavar='--quality-threshold', help='Threshold for counting a nucleotide (used for coverage). Default=0, cause currently only counting total coverage', default=0)
 parser.add_argument('-o', metavar='--output', help='Output name for the csv', default='')
-# parser.add_argument('-bf', metavar='--barcode_file', help='Fasta file containing one or more barcodes to split on.')
-# parser.add_argument('-r', default=False, action='store_true', help='Removes barcode from the read.')
-# parser.add_argument('-kd', default=False, action='store_true',
-#                     help='If multiple barcodes are found in a read also put them in the individual fastq files.')
 args = parser.parse_args()
 
 sam_file_name = args.sam_file.split('/')[-1].split('.')[0]
@@ -27,6 +23,7 @@ if args.o:
 else:
     csv_name = sam_file_name
 
+# Import modules
 try:
     import pysam
     from Bio import SeqIO
@@ -36,7 +33,7 @@ try:
     import pandas as pd
 except ImportError as e:
     pip_dict = {
-        'Bio': 'biopython'
+        'Bio': 'biopython',
     }
     mis_package = str(e).split('\'')[-2].strip("'")
     try:
@@ -65,11 +62,7 @@ wildtype = 0
 unmapped = 0
 total_reads = 0
 
-def adjust_bar_pos(read, cigar, bar_pos, ref_start):
-    # print(read)
-    # print(cigar)
-    # print(bar_pos)
-    # print(ref_start)
+def adjust_bar_pos(cigar, bar_pos, ref_start):
     curr_pos = 0
     adjustment = 0
     for cig in cigar:
@@ -99,55 +92,28 @@ for read in samfile:
     found_barcodes = read.query_name.split('_')[:-1]
     if read.reference_start != 4838 and read.query_alignment_sequence.startswith('CTATGAAA'):
         cnt_strange_start += 1
-        # if 'TCAACCACAATGTGTTGTCCGGCCAATACTTGTTGCAA' in read.get_tag('MD'):
         if 'gccaata'.upper() in read.get_tag('MD'):
             cnt_strange_start_sequence += 1
-            # print(read.get_tag('MD'))
-        # print()
-        # exit()
-    #     print(read)
-    #     print(read.reference_start)
-    #     exit()
     if not found_barcodes:
-        # print(read)
-        # print(read.cigartuples)
         continue
     for barcode in found_barcodes:
         barcode_id, bar_positions = barcode.split(':')
         read_positions = [int(pos) for pos in bar_positions.split(',')]
         mapped_positions = [int(pos)+read.reference_start for pos in bar_positions.split(',')]
         tuples_cigar = [x[0] for x in read.cigartuples]
-        # print(barcode)
-        # exit()
         if 1 in tuples_cigar:
             ins += 1
         if 2 in tuples_cigar:
             dels += 1
-        # if "362_GWNJ-1013:151:GW2103141063rd.Miseq:1:2101:31286:23891" not in str(read) or barcode != 'Strep-tag:362': continue
         barcode_reads[barcode_id.split(':')[0]].append((read.query_name.split('_')[-1], read_positions, mapped_positions))
-        # if len(bar_positions.split(',')) < 3: continue
-        # print([int(x) for x in bar_positions.split(',')])
-        # print(bar_positions)
-        # print([int(x) for x in bar_positions.split(',')])
-        adjusted_bar_pos = [adjust_bar_pos(read, read.cigartuples, y, read.reference_start) for y in [int(x) for x in bar_positions.split(',')]]
-        # print([int(x) for x in bar_positions.split(',')])
-        # print(read.reference_start)
-        # print(read)
-        # print(barcode)
-        # print(adjusted_bar_pos)
-        # exit()
-        # print(adjusted_bar_pos)
+        adjusted_bar_pos = [adjust_bar_pos(read.cigartuples, y, read.reference_start) for y in [int(x) for x in bar_positions.split(',')]]
 
         try:
             position_dict[read.reference_name][barcode_id.split(':')[0]][adjusted_bar_pos] += 1
         except KeyError:
             position_dict[read.reference_name][barcode_id.split(':')[0]] = np.zeros(len(ref_trans[read.reference_name]))
             position_dict[read.reference_name][barcode_id.split(':')[0]][adjusted_bar_pos] += 1
-        # try:
-        #     position_dict[read.reference_name][barcode_id.split(':')[0]][[int(pos)+read.reference_start for pos in bar_positions.split(',')]] += 1
-        # except KeyError:
-        #     position_dict[read.reference_name][barcode_id.split(':')[0]] = np.zeros(len(ref_trans[read.reference_name]))
-        #     position_dict[read.reference_name][barcode_id.split(':')[0]][[int(pos)+read.reference_start for pos in bar_positions.split(',')]] += 1
+
 print(f'total reads: {total_reads}')
 print(f'Alignment not starting at 4838 even if seq starts with CTATGAAA: {cnt_strange_start}\n'
       f'These having TCAACCACAATGTGTTGTCCGGCCAATACTTGTTGCAA: {cnt_strange_start_sequence} {cnt_strange_start_sequence/cnt_strange_start*100:0.1f}')
