@@ -199,6 +199,7 @@ for idx, read in enumerate(samfile.fetch()):
             mut_qualities['other_besides_alanine'].extend(tmp_muts)
         else:
             mut_qualities['other_no_alanine'].extend(tmp_muts)
+        tmp_muts = []
 
 
 read_cnt = idx+1
