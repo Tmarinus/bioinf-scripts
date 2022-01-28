@@ -49,12 +49,12 @@ except ImportError as e:
 # Check for barcode file or barcodes given as arguments
 barcodes = {}
 if args.b:
-    barcodes += dict(zip(args.b.split(','), range(0, len(args.b.split(',')))))
+    for b in args.b.split(','):
+        barcodes[b] = b
 if args.bf:
     for record in SeqIO.parse(args.bf, 'fasta'):
         barcodes[record.id] = str(record.seq)
 fastq_name = args.fastq_file.split('/')[-1]
-
 # Parse output naming and location
 if args.o and not args.o.endswith('/'):
     args.o += '/'
