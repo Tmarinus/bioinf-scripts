@@ -16,7 +16,8 @@ try:
 except ImportError:
     print(f'Script requires pysam, pandas, numpy, Biopython, matplotlib modules to be installed run\n'
           f'pip3 install pysam --user\npip3 install BioPython --user\n'
-          f'pip3 install matplotlib --user\npip3 install pandas --user')
+          f'pip3 install matplotlib --user\npip3 install pandas --user\n'
+          f'pip3 install alive_progress --user\n')
     exit()
 
 AA_list = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', 'X', 'Z', 'J', 'U', '*']
