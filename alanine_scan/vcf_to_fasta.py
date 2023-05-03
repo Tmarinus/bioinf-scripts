@@ -8,6 +8,7 @@ try:
     from Bio.Seq import Seq
     from Bio.SeqRecord import SeqRecord
 except ImportError:
+    print(e)
     print(f'Script requires BioPython module to be installed run\npip3 install BioPython --user')
     exit()
 
