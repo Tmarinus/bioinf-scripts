@@ -7,6 +7,7 @@ try:
     from Bio.Seq import Seq
     import argparse
 except ImportError:
+    print(e)
     print(f'Script requires pysam module to be installed run\npip3 install BioPython --user\n')
     exit()
 
