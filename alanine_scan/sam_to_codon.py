@@ -21,6 +21,29 @@ except ImportError:
 
 AA_list = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', 'X', 'Z', 'J', 'U', '*']
 
+AA_conv_dict = {
+    'A': 'Alanine',
+    'C': 'Cysteine',
+    'D': 'Aspartic-acid',
+    'E': 'Glutamic-acid',
+    'F': 'Phenylalanine',
+    'G': 'Glycine',
+    'H': 'Histidine',
+    'I': 'Isoleucine',
+    'K': 'Lysine',
+    'L': 'Leucine',
+    'M': 'Methionine',
+    'N': 'Asparagine',
+    'P': 'Proline',
+    'Q': 'Glutamine',
+    'R': 'Arginine',
+    'S': 'Serine',
+    'T': 'Threonine',
+    'V': 'Valine',
+    'W': 'Tryptophan',
+    'Y': 'Tyrosine'
+}
+
 parser = argparse.ArgumentParser(usage=f'Param order; sam_path, fasta_path, output_path, AA_start (in fasta), AA_end.\n'
                                        f'Optional use --split_sam to split the sam file based on read conditions. 🐻',
            description=f'Script requires BioPython module to be installed run\npip3 install BioPython --user')
@@ -31,12 +54,21 @@ parser.add_argument('output', help='file name and path for output (will create o
 parser.add_argument('aa_start', help='AA starting position in fasta file (start counting at 1)', type=int)
 parser.add_argument('aa_end', help='AA ending position in fasta file (this is the last nucleotide that is still part of the AA seq)', type=int)
 parser.add_argument('--split_sam', help='Split sam files, depending on read type, will be stored in sam folder', action='store_true')
-parser.add_argument('--mut_quality', help=f'Output mutation quality. Will be split on (expected) Alanine mut or non Alanine mut'
+parser.add_argument('--mut_quality', help=f'Output mutation quality. Will be split on (expected) target aa mut or non target aa mut'
                                           f'Default calculation is minimum quality of the three nucleotides of the codon', action='store_true')
 parser.add_argument('--mut_quality_max', help=f'Set mut_quality to maximum of three codons', action='store_true')
 parser.add_argument('--mut_quality_avg', help=f'Set mut_quality to average of three codons', action='store_true')
+parser.add_argument('--set_target_aa', nargs=2, help=f'Set the target amino acid for the scan. By default this is Alanine (incase reference is Alanine then Glycine).'+\
+    f"Example --set_target_aa A G")
 
 args = parser.parse_args()
+
+target_aa = args.set_target_aa
+t_aa = 'A'
+m_aa = 'G'
+if target_aa:
+    t_aa = target_aa[0]
+    m_aa = target_aa[1]
 
 fasta_file = args.fasta_file
 sam_file = args.sam_file
@@ -55,7 +87,7 @@ if output.endswith('/'):
 else:
     sam_output = "/".join(output.split('/')[:-1])+f"/sam_files_{output.split('/')[-1]}"
 
-AA_length = int((AA_end+2 - AA_start) / 3)
+AA_length = int((AA_end+1 - AA_start) / 3)
 
 fasta_dict = {}
 with open(fasta_file, "r") as file:
@@ -65,24 +97,24 @@ f_str = str(list(fasta_dict.values())[0].seq)
 
 samfile = pysam.AlignmentFile(sam_file, "rb")
 
-read_passed_cnt, read_mut_cnt, alanine_mut_cnt, alt_mut_cnt = 0, [0, 0, 0, 0, 0], 0, 0
+read_passed_cnt, read_mut_cnt, target_mut_cnt, alt_mut_cnt = 0, [0, 0, 0, 0, 0], 0, 0
 read_count = np.array([0]*len(f_str))
-aa_alanine_only = np.array([0]*AA_length)
+aa_target_only = np.array([0]*AA_length)
 aa_alt_muts = np.array([0]*AA_length)
 idx = 0
 mut_list = [dict((AA, 0) for AA in AA_list) for x in range(AA_length)]
 sam_writers = {}
-mut_quality_alanine = []
+mut_quality_target = []
 mut_quality_other = []
 mut_quality = None
 tmp_muts = []
 
 mut_qualities = {
-    'singl_alanine': [],
-    'not_alone_alanine': [],
+    f'singl_{AA_conv_dict[t_aa]}': [],
+    f'not_alone_{AA_conv_dict[t_aa]}': [],
     'singl_other': [],
-    'other_besides_alanine': [],
-    'other_no_alanine': [],
+    f'other_besides_{AA_conv_dict[t_aa]}': [],
+    f'other_no_{AA_conv_dict[t_aa]}': [],
 }
 
 if args.split_sam:
@@ -108,7 +140,6 @@ def chunks(lst, n):
 
 for idx, read in enumerate(samfile.fetch()):
     # Skipping all reads that are not perfectly mapped!
-    # TODO fix clippings (currently only perfect reads are used)
     if len(read.get_blocks()) != 1 or read.flag:
         write_sams('indel', read)
         continue
@@ -154,12 +185,13 @@ for idx, read in enumerate(samfile.fetch()):
     read_nucl = forward_str[codon_start_offset:len(forward_str)-codon_end_offset]
     f_aa = Seq(f_nucl).translate()
     read_aa = Seq(read_nucl).translate()
+    # TODO rename x,y,q into something logical.
     aa_diff = [(pos, pos+read_first_aa, x, y, q) for pos, (x, y, q) in enumerate(zip(f_aa, read_aa, chunks(phred_quality, 3))) if x != y]
     while len(aa_diff) >= len(read_mut_cnt): # Expand array size to be able to count number of mutations
         read_mut_cnt.append(0)
     read_mut_cnt[len(aa_diff)] += 1
     write_sams(len(aa_diff), read)
-    alanine_found = False
+    target_aa_found = False
     for mut in aa_diff: # iterate over mutations
         if args.mut_quality:
             if args.mut_quality_max:
@@ -175,17 +207,17 @@ for idx, read in enumerate(samfile.fetch()):
             print(mut)
             print("error was found in above mutation. Contact support.")
             exit()
-        # Check if alanine mutation (or guanine)
-        if mut[3] == 'A' or (mut[2] == 'A' and mut[3] == 'G'):
-            alanine_mut_cnt += 1
-            mut_quality_alanine.append(mut_quality)
-            alanine_found = True
-            # Was alanine the only mutation?
+        # Check if target aa mutation (or guanine)
+        if mut[3] == t_aa or (mut[2] == t_aa and mut[3] == m_aa):
+            target_mut_cnt += 1
+            mut_quality_target.append(mut_quality)
+            target_aa_found = True
+            # Was target aa the only mutation?
             if len(aa_diff) == 1:
-                mut_qualities['singl_alanine'].append(mut_quality)
-                aa_alanine_only[mut[1]] += 1
+                mut_qualities[f'singl_{AA_conv_dict[t_aa]}'].append(mut_quality)
+                aa_target_only[mut[1]] += 1
             else:
-                mut_qualities['not_alone_alanine'].append(mut_quality)
+                mut_qualities[f'not_alone_{AA_conv_dict[t_aa]}'].append(mut_quality)
         else:
             alt_mut_cnt += 1
             aa_alt_muts[mut[1]] += 1
@@ -195,16 +227,16 @@ for idx, read in enumerate(samfile.fetch()):
             else:
                 tmp_muts.append(mut_quality)
     if tmp_muts:
-        if alanine_found:
-            mut_qualities['other_besides_alanine'].extend(tmp_muts)
+        if target_aa_found:
+            mut_qualities[f'other_besides_{AA_conv_dict[t_aa]}'].extend(tmp_muts)
         else:
-            mut_qualities['other_no_alanine'].extend(tmp_muts)
+            mut_qualities[f'other_no_{AA_conv_dict[t_aa]}'].extend(tmp_muts)
         tmp_muts = []
 
 
 read_cnt = idx+1
-print(f"Alanine mutations {alanine_mut_cnt} other mutations {alt_mut_cnt}\n"
-      f"Reads with only a single alanine mutation: {sum(aa_alanine_only)} {(sum(aa_alanine_only)/read_passed_cnt)*100:0.1f}% of passed reads")
+print(f"{AA_conv_dict[t_aa]} mutations {target_mut_cnt} other mutations {alt_mut_cnt}\n"
+      f"Reads with only a single {AA_conv_dict[t_aa]} mutation: {sum(aa_target_only)} {(sum(aa_target_only)/read_passed_cnt)*100:0.1f}% of passed reads")
 print(f"Total reads {read_cnt} used reads: {read_passed_cnt} {(read_passed_cnt/read_cnt)*100:0.1f}% not used: "
       f"{read_cnt-read_passed_cnt} {((read_cnt-read_passed_cnt)/read_cnt)*100:0.1f}% ")
 aa_coverage = []
@@ -216,9 +248,12 @@ df = pd.DataFrame(mut_list[0], index=[0])
 for muts in mut_list[1:]:
     df = df.append(muts, ignore_index=True)
 df.insert(0, 'aa_pos', list(range(1, AA_length+1)), True)
+# TODO fix the error
+print(f"length {len(f_str)}, {AA_start} {AA_end}")
 df.insert(1, 'amino_acid', list(Seq(f_str[AA_start:AA_end+2]).translate()), True)
+print("B")
 df.insert(2, 'coverage', aa_coverage, True)
-df.insert(3, 'single_alanine', aa_alanine_only, True)
+df.insert(3, f'single_{AA_conv_dict[t_aa]}', aa_target_only, True)
 
 # Writing dataframe to excel file
 writer = pd.ExcelWriter(output+'.xlsx', engine='xlsxwriter')
@@ -234,13 +269,13 @@ mutations_sheet.set_column(0, 100, 5, cell_format=cell_format)
 num_mut_df = pd.DataFrame({'#mutations': list(range(len(read_mut_cnt))), 'occurrences': read_mut_cnt})
 num_mut_df.to_excel(writer, sheet_name="muts_per_read", index=False)
 #Write mutation quality
-num_mut_df = pd.DataFrame({'expected (Alanine)': pd.Series(mut_quality_alanine),
+num_mut_df = pd.DataFrame({f'expected ({AA_conv_dict[t_aa]})': pd.Series(mut_quality_target),
                            'other': pd.Series(mut_quality_other),
-                           'Single alanine': pd.Series(mut_qualities['singl_alanine']),
-                           'Alanine with others': pd.Series(mut_qualities['not_alone_alanine']),
-                           'Single non alanine': pd.Series(mut_qualities['singl_other']),
-                           'Other next to alanine': pd.Series(mut_qualities['other_besides_alanine']),
-                           'Other no alanine': pd.Series(mut_qualities['other_no_alanine']),
+                           f'Single {AA_conv_dict[t_aa]}': pd.Series(mut_qualities[f'singl_{AA_conv_dict[t_aa]}']),
+                           f'{AA_conv_dict[t_aa]} with others': pd.Series(mut_qualities[f'not_alone_{AA_conv_dict[t_aa]}']),
+                           f'Single non {AA_conv_dict[t_aa]}': pd.Series(mut_qualities['singl_other']),
+                           f'Other next to {AA_conv_dict[t_aa]}': pd.Series(mut_qualities[f'other_besides_{AA_conv_dict[t_aa]}']),
+                           f'Other no {AA_conv_dict[t_aa]}': pd.Series(mut_qualities[f'other_no_{AA_conv_dict[t_aa]}']),
                            })
 num_mut_df.to_excel(writer, sheet_name="mutation_qualities", index=False)
 

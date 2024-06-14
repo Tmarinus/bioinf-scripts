@@ -139,3 +139,4 @@ dmypy.json
 *.json
 *.bam.bai
 *.bai
+data/
