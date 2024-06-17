@@ -188,7 +188,7 @@ for idx, read in enumerate(samfile.fetch()):
     f_aa = Seq(f_nucl).translate()
     read_aa = Seq(read_nucl).translate()
     # TODO rename x,y,q into something logical.
-    aa_diff = [(pos, pos+read_first_aa, x, y, q) for pos, (x, y, q) in enumerate(zip(f_aa, read_aa, chunks(phred_quality, 3))) if x != y]
+    aa_diff = [(pos, pos+read_first_aa, ref_aa, mut_aa, pq) for pos, (ref_aa, mut_aa, pq) in enumerate(zip(f_aa, read_aa, chunks(phred_quality, 3))) if ref_aa != mut_aa]
     while len(aa_diff) >= len(read_mut_cnt): # Expand array size to be able to count number of mutations
         read_mut_cnt.append(0)
     read_mut_cnt[len(aa_diff)] += 1
@@ -250,10 +250,7 @@ df = pd.DataFrame(mut_list[0], index=[0])
 for muts in mut_list[1:]:
     df = df.append(muts, ignore_index=True)
 df.insert(0, 'aa_pos', list(range(1, AA_length+1)), True)
-# TODO fix the error
-print(f"length {len(f_str)}, {AA_start} {AA_end}")
-df.insert(1, 'amino_acid', list(Seq(f_str[AA_start:AA_end+2]).translate()), True)
-print("B")
+df.insert(1, 'amino_acid', list(Seq(f_str[AA_start:AA_end+1]).translate()), True)
 df.insert(2, 'coverage', aa_coverage, True)
 df.insert(3, f'single_{AA_conv_dict[t_aa]}', aa_target_only, True)
 
